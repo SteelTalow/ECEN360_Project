@@ -12,6 +12,8 @@ from sklearn.linear_model import \
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
 from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import mean_squared_error
 
 print("Import ISLP stuff")
 from ISLP import load_data
@@ -64,16 +66,15 @@ print(df.columns)
 
 
 #Columns of interest
-df = df[['camis','dba','cuisine_description','boro','score','violation_code']]
+df = df[['dba','cuisine_description','boro','score','violation_code']]
 #We need to encode the violation_code
 violation_le = LabelEncoder()
 df["violation_code"] = df["violation_code"].astype(str)
 df["violation_code"] = violation_le.fit_transform(df['violation_code'])
 
 #Predictors
-X = ["camis","dba","cuisine_description","boro"]
+X = ["dba","cuisine_description","boro"]
 
-df['camis'] = df['camis'].fillna("unknown")
 df['dba'] = df['dba'].fillna("unknown")
 df['cuisine_description'] = df['cuisine_description'].fillna("unknown")
 df['boro'] = df['boro'].fillna("unknown")
@@ -129,6 +130,16 @@ test_dataset_SCORE = TensorDataset(x_cat_test, y_score_test)
 
 train_dataset_VIO = TensorDataset(x_cat_train, y_violation_train)
 test_dataset_VIO = TensorDataset(x_cat_test, y_violation_test)
+
+#Put the data sets into a full set as well
+x_cat_score_all = torch.cat([x_cat_train, x_cat_test], dim=0)
+y_score_all = torch.cat([y_score_train, y_score_test], dim=0)
+score_dataset = TensorDataset(x_cat_score_all, y_score_all)
+
+# Combine violation datasets
+x_cat_vio_all = torch.cat([x_cat_train, x_cat_test], dim=0)
+y_vio_all = torch.cat([y_violation_train, y_violation_test], dim=0)
+vio_dataset = TensorDataset(x_cat_vio_all, y_vio_all)
 
 print("Working on Embedding Sizes")
 
@@ -252,6 +263,41 @@ if __name__ == "__main__":
     print("True score:", true_score.item())
     #Now we should make some output/graph of our model's predictions
 
+
+    print("Now running model for predicting all data, then saving to CSV.")
+
+    loader = DataLoader(score_dataset, batch_size = 32) #Batch size may need to be adjusted later
+
+    predictions = SCORE_trainer.predict(SCORE_module, dataloaders = loader)
+
+    # Unpack all predicted and true values
+    all_true = []
+    all_preds = []
+
+    for true_y, y_hat in predictions:
+        all_true.append(true_y)
+        all_preds.append(y_hat)
+
+    # Concatenate them into single tensors
+    true_labels = torch.cat(all_true)
+    predicted_scores = torch.cat(all_preds)
+
+    # Compute MSE
+    mse = mean_squared_error(true_labels.cpu().numpy(), predicted_scores.cpu().numpy())
+    print(f"MSE: {mse:.4f}")
+
+    #Push output to a csv
+    df = pd.DataFrame({
+    'Prediction': predicted_scores.cpu().numpy().squeeze()
+    })
+
+    # Save to CSV
+    df.to_csv('score_predictions.csv', index=False)
+    print("Predictions saved to score_predictions.csv")
+
+
+    #Old code for predicting just a few samples.
+    '''
     print("Now testing multiple samples")
 
     n = 5
@@ -276,3 +322,4 @@ if __name__ == "__main__":
         print(f"Sample {i + 1}:")
         print("  True Score     :", true_y[i].item())
         print("  Predicted Score:", y_hat[i].item())
+    '''
